@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Magical Hearts & Fairy Dust</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #02020a; }
+        canvas { display: block; }
+
+        #hint {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            color: #dcd0ff;
+            font-family: 'Courier New', Courier, monospace;
+            opacity: 0.8;
+            pointer-events: none;
+            font-size: 14px;
+            letter-spacing: 4px;
+            text-shadow: 0 0 15px #a066ff;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+<div id="hint">Click the Hearts to see a Secret Message</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const loveNotes = [
+    "I like you.", "Stay.", "You matter.", "Text me.",
+    "Always you.", "Soft heart.", "Mine?", "Call me?",
+    "You glow.", "Don’t overthink.", "Forever maybe.",
+    "Still choosing you.", "You feel safe.", "My person."
+];
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#02020a');
+scene.fog = new THREE.FogExp2(0x02020a, 0.02);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 35);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+
+function createHeartTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(64, 64); ctx.scale(1, -1);
+
+    const grad = ctx.createRadialGradient(0, -10, 0, 0, -10, 60);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.4, 'rgba(200, 220, 255, 0.9)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    for(let i=0; i<=Math.PI*2; i+=0.05) {
+        const x = 16 * Math.pow(Math.sin(i), 3);
+        const y = 13 * Math.cos(i) - 5*Math.cos(2*i) - 2*Math.cos(3*i) - Math.cos(4*i);
+        ctx.lineTo(x*2.5, y*2.5);
+    }
+    ctx.fill();
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createSparkleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(32, 32);
+
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
+    grad.addColorStop(0, 'white');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(0, -20); ctx.lineTo(4, -4); ctx.lineTo(20, 0);
+    ctx.lineTo(4, 4); ctx.lineTo(0, 20); ctx.lineTo(-4, 4);
+    ctx.lineTo(-20, 0); ctx.lineTo(-4, -4);
+    ctx.fill();
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createTextTexture(text) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    ctx.font = "bold 85px 'Arial', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.lineWidth = 12;
+    ctx.strokeText(text, 512, 128);
+
+    ctx.shadowColor = "#FF00FF";
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, 512, 128);
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.strokeText(text, 512, 128);
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+const heartTexture = createHeartTexture();
+const sparkleTexture = createSparkleTexture();
+
+const nebulaGeo = new THREE.BufferGeometry();
+const count = 4000;
+const pos = new Float32Array(count * 3);
+const cols = new Float32Array(count * 3);
+const colors = [new THREE.Color('#80c7ff'), new THREE.Color('#cdb4db'), new THREE.Color('#bde0fe')];
+
+for(let i=0; i<count; i++) {
+    const t = Math.random() * Math.PI * 2;
+    let x = 16 * Math.pow(Math.sin(t), 3);
+    let y = 13 * Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+
+    pos[i*3] = x + (Math.random()-0.5) * 6;
+    pos[i*3+1] = y + (Math.random()-0.5) * 6;
+    pos[i*3+2] = (Math.random()-0.5) * 80;
+
+    const c = colors[Math.floor(Math.random()*colors.length)];
+    cols[i*3] = c.r;
+    cols[i*3+1] = c.g;
+    cols[i*3+2] = c.b;
+}
+
+nebulaGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+nebulaGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+
+const nebula = new THREE.Points(
+    nebulaGeo,
+    new THREE.PointsMaterial({
+        size: 0.7,
+        map: heartTexture,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    })
+);
+
+scene.add(nebula);
+
+const heartGroup = new THREE.Group();
+scene.add(heartGroup);
+
+const heartMat = new THREE.SpriteMaterial({
+    map: heartTexture,
+    color: 0xffccff,
+    transparent: true,
+    blending: THREE.AdditiveBlending
+});
+
+for(let i=0; i<25; i++) {
+    const h = new THREE.Sprite(heartMat.clone());
+    h.position.set(
+        (Math.random()-0.5)*30,
+        (Math.random()-0.5)*30,
+        (Math.random()-0.5)*20
+    );
+    h.scale.setScalar(2);
+    h.userData = { offset: Math.random()*100 };
+    heartGroup.add(h);
+}
+
+const cursorParticles = [];
+const rings = [];
+const effects = [];
+
+function spawnCursorDust(point) {
+    const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+            map: sparkleTexture,
+            transparent: true,
+            blending: THREE.AdditiveBlending
+        })
+    );
+    sprite.position.copy(point);
+    sprite.scale.setScalar(0.5);
+    scene.add(sprite);
+    cursorParticles.push({ mesh: sprite, life: 1.0 });
+}
+
+function spawnShockwave(pos) {
+    const mesh = new THREE.Mesh(
+        new THREE.RingGeometry(0.1, 0.2, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending
+        })
+    );
+    mesh.position.copy(pos);
+    mesh.lookAt(camera.position);
+    scene.add(mesh);
+    rings.push({ mesh: mesh, scale: 1, opacity: 0.8 });
+}
+
+function spawnMagicEffect(pos) {
+    const tex = createTextTexture(
+        loveNotes[Math.floor(Math.random() * loveNotes.length)]
+    );
+
+    const textSprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+    );
+
+    textSprite.position.copy(pos).add(new THREE.Vector3(0, 1.2, 0));
+    textSprite.scale.set(7, 1.75, 1);
+    scene.add(textSprite);
+
+    const pPos = [], pVel = [];
+
+    for(let i=0; i<20; i++) {
+        pPos.push(pos.x, pos.y, pos.z);
+        const theta = Math.random()*Math.PI*2;
+        const phi = Math.random()*Math.PI;
+        const spd = Math.random()*0.3 + 0.1;
+
+        pVel.push({
+            x: spd*Math.sin(phi)*Math.cos(theta),
+            y: spd*Math.sin(phi)*Math.sin(theta),
+            z: spd*Math.cos(phi)
+        });
+    }
+
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
+
+    const pSys = new THREE.Points(
+        pGeo,
+        new THREE.PointsMaterial({
+            size: 0.8,
+            map: sparkleTexture,
+            color: 0xffdd00,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        })
+    );
+
+    scene.add(pSys);
+    effects.push({ text: textSprite, particles: pSys, pVel: pVel, age: 0 });
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener('mousemove', (e) => {
+    const x = (e.clientX / window.innerWidth) * 2 - 1;
+    const y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+    const cursorRay = new THREE.Raycaster();
+    cursorRay.setFromCamera({x, y}, camera);
+
+    const dir = new THREE.Vector3(0,0,10)
+        .unproject(camera)
+        .sub(camera.position)
+        .normalize();
+
+    const dist = (10 - camera.position.z) / dir.z;
+
+    spawnCursorDust(
+        camera.position.clone().add(dir.multiplyScalar(dist))
+    );
+});
+
+window.addEventListener('click', (e) => {
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(heartGroup.children);
+
+    if(hits.length > 0) {
+        const hit = hits[0].object;
+        spawnMagicEffect(hit.position);
+        spawnShockwave(hit.position);
+        hit.scale.setScalar(0);
+        hit.position.set(
+            (Math.random()-0.5)*30,
+            (Math.random()-0.5)*30,
+            (Math.random()-0.5)*20
+        );
+    }
+});
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloom = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.2,
+    0.5,
+    0.1
+);
+
+composer.addPass(bloom);
+
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const t = clock.getElapsedTime();
+    controls.update();
+
+    nebula.rotation.z = t * 0.02;
+
+    heartGroup.children.forEach(h => {
+        h.position.y += Math.sin(t*2 + h.userData.offset) * 0.01;
+        if(h.scale.x < 2) h.scale.addScalar(0.05);
+    });
+
+    for(let i=cursorParticles.length-1; i>=0; i--) {
+        const p = cursorParticles[i];
+        p.life -= 0.05;
+        p.mesh.scale.multiplyScalar(0.9);
+        p.mesh.material.opacity = p.life;
+
+        if(p.life <= 0) {
+            scene.remove(p.mesh);
+            cursorParticles.splice(i,1);
+        }
+    }
+
+    for(let i=rings.length-1; i>=0; i--) {
+        const r = rings[i];
+        r.scale += 0.5;
+        r.opacity -= 0.03;
+        r.mesh.scale.setScalar(r.scale);
+        r.mesh.material.opacity = r.opacity;
+
+        if(r.opacity <= 0) {
+            scene.remove(r.mesh);
+            rings.splice(i,1);
+        }
+    }
+
+    for(let i=effects.length-1; i>=0; i--) {
+        const eff = effects[i];
+        eff.age++;
+
+        eff.text.position.y += 0.015;
+
+        if(eff.age > 80)
+            eff.text.material.opacity -= 0.03;
+
+        const posAttr = eff.particles.geometry.attributes.position;
+
+        for(let j=0; j<eff.pVel.length; j++) {
+            posAttr.array[j*3] += eff.pVel[j].x;
+            posAttr.array[j*3+1] += eff.pVel[j].y;
+            posAttr.array[j*3+2] += eff.pVel[j].z;
+
+            eff.pVel[j].x *= 0.95;
+            eff.pVel[j].y *= 0.95;
+            eff.pVel[j].z *= 0.95;
+        }
+
+        posAttr.needsUpdate = true;
+        eff.particles.material.opacity = 1 - (eff.age/60);
+
+        if(eff.age > 120) {
+            scene.remove(eff.text);
+            scene.remove(eff.particles);
+            effects.splice(i, 1);
+        }
+    }
+
+    composer.render();
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+</script>
+
+</body>
+</html>
